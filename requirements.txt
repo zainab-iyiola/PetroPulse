@@ -22,4 +22,5 @@ python-dotenv
 tqdm
 newsapi-python
 textblob
+wordcloud
 lxml_html_clean
