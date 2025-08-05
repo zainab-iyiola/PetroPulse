@@ -2,27 +2,24 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import annotations
-import ast
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 import altair as alt
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from io import StringIO
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Project imports
 from src.storage.db import get_engine, get_articles_df
-
-# Sentiment function
-try:
-    from src.models.sentiment import compute_daily_sentiment_index
-    HAVE_SENT_FN = True
-except Exception:
-    HAVE_SENT_FN = False
+from src.models.sentiment import compute_daily_sentiment_index
+from src.nlp.pipeline import extract_entities
 
 EASTERN = ZoneInfo("US/Eastern")
 
@@ -34,7 +31,6 @@ def to_edtz(ts):
         return None
     return ts.tz_convert(EASTERN)
 
-
 def fallback_daily_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     tmp = df.copy()
     if "published_at" not in tmp.columns or "sentiment" not in tmp.columns:
@@ -45,30 +41,6 @@ def fallback_daily_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     out = tmp.groupby("date", as_index=False)["sentiment"].mean(numeric_only=True)
     out.columns = ["date", "sentiment"]
     return out
-
-
-def label_sentiment(polarity: float) -> str:
-    if pd.isna(polarity):
-        return "Neutral"
-    if polarity > 0.1:
-        return "Positive"
-    if polarity < -0.1:
-        return "Negative"
-    return "Neutral"
-
-
-def extract_entities(ents) -> list[str]:
-    if isinstance(ents, (list, tuple)):
-        return ents
-    if isinstance(ents, str):
-        try:
-            ev = ast.literal_eval(ents)
-            if isinstance(ev, list):
-                return ev
-        except Exception:
-            pass
-    return []
-
 
 def kpi_card(label: str, value: str, gradient: str):
     st.markdown(
@@ -87,73 +59,67 @@ def kpi_card(label: str, value: str, gradient: str):
         unsafe_allow_html=True,
     )
 
-
-def sentiment_chart(idx: pd.DataFrame, title: str = "Sentiment Index (Selected Range)"):
+def sentiment_chart(idx: pd.DataFrame, title: str = "Sentiment Index"):
     if idx.empty:
-        st.info("No sentiment data for the selected range yet.")
+        st.info("No sentiment data for this range.")
         return
     chart = (
         alt.Chart(idx)
         .mark_line(point=True)
         .encode(
-            x=alt.X("date:T", title=None),
-            y=alt.Y("sentiment:Q", title=None, scale=alt.Scale(domain=(-1, 1))),
-            tooltip=[
-                alt.Tooltip("date:T", title="Date"),
-                alt.Tooltip("sentiment:Q", title="Sentiment", format=".3f"),
-            ],
+            x="date:T",
+            y=alt.Y("sentiment:Q", scale=alt.Scale(domain=(-1,1))),
+            tooltip=["date:T","sentiment:Q"]
         )
-        .properties(height=260)
+        .properties(height=200)
         .interactive()
     )
     st.subheader(title)
     st.altair_chart(chart, use_container_width=True)
 
-# Page config
+# --- Page setup ---
 st.set_page_config(page_title="PetroPulse", page_icon="🛢️", layout="wide")
 st.sidebar.title("PetroPulse")
-st.sidebar.caption("Controls")
+st.sidebar.caption("Filters & Controls")
 
-# Load data
+# --- Load & filter data ---
 engine = get_engine()
 df_all = get_articles_df(engine)
 
-if not df_all.empty:
-    df_all["published_at"] = pd.to_datetime(df_all["published_at"], utc=True, errors="coerce")
-else:
-    df_all = pd.DataFrame(columns=["source","title","url","published_at","sentiment","entities"])
+if df_all.empty:
+    st.error("No articles in the database yet.")
+    st.stop()
 
-# Smart default date range
-min_date = (df_all["published_at"].min().date() if not df_all.empty else datetime.now(timezone.utc).date() - timedelta(days=30))
-max_date = (df_all["published_at"].max().date() if not df_all.empty else datetime.now(timezone.utc).date())
+df_all["published_at"] = pd.to_datetime(df_all["published_at"], utc=True, errors="coerce")
+min_date = df_all["published_at"].dt.date.min()
+max_date = df_all["published_at"].dt.date.max()
+
+# Sidebar date inputs with smart defaults
 start_date = st.sidebar.date_input("Start date", value=min_date, min_value=min_date, max_value=max_date)
 end_date   = st.sidebar.date_input("End date",   value=max_date, min_value=min_date, max_value=max_date)
+if start_date > end_date:
+    st.sidebar.error("Start must be ≤ End")
+    st.stop()
 
-# Energy filter
-ENERGY_KEYWORDS = [
-    "oil","gas","energy","petroleum","hydrogen","carbon",
-    "renewable","offshore","emission","turbine","fuel","exploration"
-]
-def is_energy_related(text: str) -> bool:
-    return any(k in str(text).lower() for k in ENERGY_KEYWORDS)
-df_all = df_all[df_all["title"].apply(is_energy_related)]
+# Keyword filter
+ENERGY_KEYWORDS = ["oil","gas","energy","petroleum","hydrogen","carbon",
+                   "renewable","offshore","emission","turbine","fuel","exploration"]
+def is_energy(text):
+    t = str(text).lower()
+    return any(k in t for k in ENERGY_KEYWORDS)
+df_all = df_all[df_all["title"].apply(is_energy)]
 
-# Parse entities
+# Ensure entities column
+if "entities" not in df_all.columns:
+    df_all["entities"] = [[] for _ in range(len(df_all))]
 df_all["entities_parsed"] = df_all["entities"].apply(extract_entities)
-fallback_entities = df_all["entities_parsed"].apply(len).sum() == 0
 
-# Topic filter
-if fallback_entities:
-    topics = sorted(ENERGY_KEYWORDS)
-else:
-    topics = sorted({t for sub in df_all["entities_parsed"] for t in sub})
-selected_topics = st.sidebar.multiselect("Topics", options=topics)
-
-# Source filter (default all sources)
+# Source & Topic sidebar filters
 sources = sorted(df_all["source"].dropna().unique())
-selected_sources = st.sidebar.multiselect(
-    "Sources", options=sources, default=sources
-)
+selected_sources = st.sidebar.multiselect("Sources", sources, default=sources[:5])
+
+all_topics = sorted({ent for row in df_all["entities_parsed"] for ent in row})
+selected_topics = st.sidebar.multiselect("Topics", all_topics)
 
 # Apply filters
 mask = pd.Series(True, index=df_all.index)
@@ -161,81 +127,83 @@ mask &= df_all["published_at"].dt.date.between(start_date, end_date)
 if selected_sources:
     mask &= df_all["source"].isin(selected_sources)
 if selected_topics:
-    if fallback_entities:
-        mask &= df_all["title"].apply(lambda text: any(topic.lower() in str(text).lower() for topic in selected_topics))
-    else:
-        mask &= df_all["entities_parsed"].apply(lambda lst: any(t in lst for t in selected_topics))
+    mask &= df_all["entities_parsed"].apply(lambda ents: any(t in ents for t in selected_topics))
+df = df_all[mask].copy()
 
-df = df_all.loc[mask].copy()
-
-# Header & empty state
-st.markdown("## PetroPulse")
-st.caption("Real-time oil & gas news, sentiment, word clouds, and trends")
+# No-data friendly message
 if df.empty:
-    st.warning("No articles found. Try broadening the date range or fewer filters.")
+    st.warning("No articles found. Try broadening the date range or loosening filters.")
+    st.caption(f"Available data spans {min_date} → {max_date}.")
     st.stop()
 
-# Sentiment labeling
-df["sentiment"] = pd.to_numeric(df["sentiment"], errors="coerce")
-df["sentiment_label"] = df["sentiment"].apply(label_sentiment)
-
-# KPI cards
-articles_count = len(df)
-avg_sentiment  = df["sentiment"].mean()
-unique_sources = df["source"].nunique()
-
-c1, c2, c3 = st.columns([1,1,1])
+# --- Header KPIs ---
+st.markdown("## PetroPulse Dashboard")
+c1,c2,c3 = st.columns(3)
 with c1:
-    kpi_card("Articles", f"{articles_count:,}", "linear-gradient(135deg, #1D4ED8 0%, #0EA5E9 100%)")
+    kpi_card("Articles", f"{len(df)}",      "linear-gradient(135deg,#1D4ED8,#0EA5E9)")
 with c2:
-    kpi_card("Avg Sentiment", f"{avg_sentiment:.3f}" if not np.isnan(avg_sentiment) else "—", "linear-gradient(135deg, #0F766E 0%, #10B981 100%)")
+    avg_s = df["sentiment"].astype(float).mean()
+    kpi_card("Avg Sentiment", f"{avg_s:.3f}", "linear-gradient(135deg,#0F766E,#10B981)")
 with c3:
-    kpi_card("Sources", f"{unique_sources:,}", "linear-gradient(135deg, #EA580C 0%, #F59E0B 100%)")
+    kpi_card("Sources", f"{df['source'].nunique()}", "linear-gradient(135deg,#EA580C,#F59E0B)")
 
-# Latest Articles
+# --- Latest Articles table ---
 st.markdown("### Latest Articles")
-display_df = df.copy()
+display = df.copy()
+display["Published"] = display["published_at"].apply(to_edtz).dt.strftime("%Y-%m-%d %H:%M")
+display["Sentiment"] = display["sentiment"].apply(
+    lambda x: "Positive" if x>0.1 else ("Negative" if x< -0.1 else "Neutral")
+)
+display["Link"] = display["url"].apply(lambda u: f'<a href="{u}" target="_blank">Read</a>')
+table = display[["Published","source","title","Sentiment","Link"]].rename(
+    columns={"source":"Source","title":"Title"}
+).sort_values("Published", ascending=False)
+st.markdown(table.to_html(escape=False,index=False), unsafe_allow_html=True)
 
-display_df["Published"] = display_df["published_at"].apply(to_edtz).dt.strftime("%Y-%m-%d %H:%M %Z")
-display_df["Sentiment"] = display_df["sentiment_label"]
-display_df["Link"] = display_df["url"].apply(lambda u: f'<a href="{u}" target="_blank">Read</a>' if isinstance(u, str) and u else "")
+# --- Sentiment Trend ---
+idx = compute_daily_sentiment_index(df) if compute_daily_sentiment_index else fallback_daily_sentiment(df)
+sentiment_chart(idx, "Daily Sentiment Trend")
 
-display_df = display_df.rename(columns={"source":"Source","title":"Title"})
-display_df = display_df[["Published","Source","Title","Sentiment","Link"]].sort_values("Published", ascending=False)
-st.markdown(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+# --- Article Volume Time Series ---
+st.subheader("Article Volume Over Time")
+vol = df.copy()
+vol["date"] = vol["published_at"].dt.date
+chart_ts = (
+    alt.Chart(vol)
+    .mark_bar()
+    .encode(
+        x="date:T",
+        y="count()",
+        tooltip=["date:T","count()"]
+    )
+    .properties(height=200)
+    .interactive()
+)
+st.altair_chart(chart_ts, use_container_width=True)
 
-# Download CSV
-csv = display_df.drop(columns=["Link"]).to_csv(index=False).encode("utf-8")
-st.download_button("Download articles as CSV", data=csv, file_name="petropulse_articles.csv", mime="text/csv")
-
-# Sentiment Over Time
-if HAVE_SENT_FN:
-    idx = compute_daily_sentiment_index(df.rename(columns={"published_at":"published_at"}))
-else:
-    idx = fallback_daily_sentiment(df)
-
-sentiment_chart(idx)
-st.markdown("<div style='opacity:.6; font-size:12px; margin-top:12px;'>Data shown in Eastern Time. Sentiment is average text polarity per day.</div>", unsafe_allow_html=True)
-
-# Word Cloud
-st.subheader("Word Cloud")
-text = " ".join(df["title"].tolist())
-wc = WordCloud(width=800, height=400, background_color="white").generate(text)
-fig, ax = plt.subplots(figsize=(8,4))
+# --- Word Cloud of Titles ---
+st.subheader("Word Cloud (Titles)")
+all_text = " ".join(df["title"].dropna().tolist())
+wc = WordCloud(width=600, height=300, background_color="white").generate(all_text)
+fig, ax = plt.subplots(figsize=(6,3))
 ax.imshow(wc, interpolation="bilinear")
 ax.axis("off")
 st.pyplot(fig)
 
-# Article Volume Over Time
-st.subheader("Article Volume Over Time")
-vol = df.copy()
-vol["date"] = vol["published_at"].dt.date
-vol = vol.groupby("date").size().reset_index(name="count")
-vol["date"] = pd.to_datetime(vol["date"])
-chart_ts = (
-    alt.Chart(vol)
-    .mark_line(point=True)
-    .encode(x="date:T", y="count:Q", tooltip=["date","count"])  
-    .properties(height=300)
+# --- Download CSV Button ---
+st.subheader("Download Data")
+csv_buf = StringIO()
+df.to_csv(csv_buf, index=False)
+st.download_button(
+    "Download filtered articles as CSV",
+    data=csv_buf.getvalue(),
+    file_name="petropulse_articles.csv",
+    mime="text/csv"
 )
-st.altair_chart(chart_ts, use_container_width=True)
+
+# --- Footer ---
+st.markdown(
+    "<div style='font-size:12px;opacity:0.6'>"
+    f"Data from {min_date} to {max_date} | Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    "</div>", unsafe_allow_html=True
+)
