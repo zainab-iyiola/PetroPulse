@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,3 +12,18 @@ reports/
 .DS_Store
 .streamlit/
 models/
+=======
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+data/raw/
+data/processed/
+reports/
+.DS_Store
+.streamlit/
+models/
+>>>>>>> f140fda (Initial commit: full project structure)
