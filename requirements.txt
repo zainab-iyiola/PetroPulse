@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 pandas
 numpy
 requests
@@ -23,30 +22,3 @@ python-dotenv
 tqdm
 newsapi-python
 textblob
-
-=======
-pandas
-numpy
-requests
-beautifulsoup4
-newspaper3k
-feedparser
-regex
-spacy
-nltk
-scikit-learn
-vaderSentiment
-bertopic
-sentence-transformers
-umap-learn
-hdbscan
-matplotlib
-plotly
-streamlit
-pydantic
-SQLAlchemy
-python-dotenv
-tqdm
-newsapi-python
-textblob 
->>>>>>> f140fda (Initial commit: full project structure)
