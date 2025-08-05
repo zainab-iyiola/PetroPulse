@@ -22,3 +22,4 @@ python-dotenv
 tqdm
 newsapi-python
 textblob
+lxml_html_clean
