@@ -1,14 +1,13 @@
 name: Daily Ingest
 
 on:
-  workflow_dispatch:    # allows manual runs
+  workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # every day at 06:00 UTC
+    - cron: "0 6 * * *"
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -19,7 +18,9 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install lxml_html_clean
 
       - name: Run ingest pipeline
         run: python ingest.py
@@ -28,6 +29,10 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data/
-          git commit -m "Daily ingest $(date +'%Y-%m-%d')"
-          git push
+          # Only commit if there are changes
+          git diff --quiet && exit 0 || (
+            git add data/
+            git commit -m "Daily ingest $(date +'%Y-%m-%d')"
+            git push
+          )
+        shell: bash
