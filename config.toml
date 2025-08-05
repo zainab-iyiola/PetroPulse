@@ -1,0 +1,9 @@
+# .streamlit/config.toml
+[theme]
+base="light"
+primaryColor="#0EA5E9"            # vivid cyan
+backgroundColor="#ffffff"
+secondaryBackgroundColor="#F5F7FB" # soft slate
+textColor="#0F172A"                # near-black
+font="sans serif"
+
