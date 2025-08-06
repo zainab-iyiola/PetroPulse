@@ -6,8 +6,11 @@ venv/
 .env
 .ipynb_checkpoints/
 data/raw/
-data/processed/
+#data/processed/
 reports/
 .DS_Store
 .streamlit/
 models/
+
+
+!data/processed/
