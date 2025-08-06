@@ -23,4 +23,5 @@ tqdm
 newsapi-python
 textblob
 wordcloud
+wordcloud
 lxml_html_clean
