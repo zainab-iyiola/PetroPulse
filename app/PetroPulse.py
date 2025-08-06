@@ -15,14 +15,13 @@ import altair as alt
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 
-# make sure we can import from your src/ folder
+# ensure import from src/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# ─── your project imports ─────────────────────────────────────────────────────
+# ─── project imports ──────────────────────────────────────────────────────────
 from src.storage.db import get_engine, get_articles_df
 from src.models.sentiment import compute_daily_sentiment_index
-from src.nlp.pipeline import extract_entities
-# ────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
 
 EASTERN = ZoneInfo("US/Eastern")
 
@@ -64,7 +63,7 @@ def sentiment_chart(df_idx: pd.DataFrame, title: str):
     st.subheader(title)
     st.altair_chart(chart, use_container_width=True)
 
-# ────────────────────────────────────────────────────────────────────────────────
+# ─── Streamlit Setup ──────────────────────────────────────────────────────────
 st.set_page_config("PetroPulse", "🛢️", layout="wide")
 st.sidebar.title("Controls")
 
@@ -85,29 +84,47 @@ if start_date > end_date:
     st.sidebar.error("Start must be ≤ End")
     st.stop()
 
-# make sure we have an 'entities' column
-if "entities" not in df.columns:
-    df["entities"] = [[] for _ in range(len(df))]
-
-df["entities_parsed"] = df["entities"].apply(lambda x: extract_entities(x) if isinstance(x, (list, str)) else [])
-
-# filter by title keywords
-KEYWORDS = ["oil","gas","energy","petroleum","carbon","renewable","offshore","fuel"]
-df = df[df["title"].str.lower().apply(lambda t: any(k in t for k in KEYWORDS))]
-
-# source filter
+# ─── Source Filter ────────────────────────────────────────────────────────────
 all_sources = sorted(df["source"].dropna().unique())
 sel_sources = st.sidebar.multiselect("Sources", all_sources, default=all_sources[:5])
 if sel_sources:
     df = df[df["source"].isin(sel_sources)]
 
-# topic filter
-all_topics = sorted({e for ents in df["entities_parsed"] for e in ents})
-sel_topics = st.sidebar.multiselect("Topics", all_topics)
-if sel_topics:
-    df = df[df["entities_parsed"].apply(lambda ents: any(t in ents for t in sel_topics))]
+# ─── Predefined Topics Filter ─────────────────────────────────────────────────
+TOPIC_LIST = [
+    # Upstream
+    "Exploration", "Seismic Surveys", "Reservoir Engineering", "Drilling", "Well Logging",
+    "Well Intervention", "Well Completion", "Hydraulic Fracturing", "Production Optimization",
+    "Enhanced Oil Recovery", "Shale Gas", "Oil Sands", "Deepwater", "Offshore Drilling",
+    "FPSO", "Directional Drilling",
+    # Midstream
+    "Pipeline Transportation", "Pipeline Safety", "Gas Processing", "Liquefied Natural Gas",
+    "Storage", "Compressor Stations", "Metering and SCADA", "Crude Transport",
+    "Permian Basin", "Hydrogen Blending",
+    # Downstream
+    "Refining", "Petrochemicals", "Retail Fuels", "LNG Export", "Crude Oil Pricing",
+    "Trading and Supply", "Turnarounds", "Sulfur Recovery",
+    # Energy Transition & Emissions
+    "Carbon Capture", "CCUS", "Hydrogen", "Blue Hydrogen", "Green Hydrogen",
+    "Methane Emissions", "Flaring Reduction", "Energy Transition", "Decarbonization",
+    "Net Zero", "Carbon Markets",
+    # Renewables & Integration
+    "Wind Energy", "Solar Integration", "Geothermal", "Biofuels", "Hybrid Energy Systems",
+    # Digitalization & Innovation
+    "Digital Oilfield", "AI in Energy", "Machine Learning", "Predictive Maintenance",
+    "Remote Monitoring", "Blockchain in Oil and Gas", "Automation", "IoT in Energy",
+    "Subsurface Modeling",
+    # General/Economics
+    "Oil Prices", "Natural Gas Markets", "Energy Security", "Regulatory Compliance",
+    "Energy Policy"
+]
 
-# date filter
+sel_topics = st.sidebar.multiselect("Topics", TOPIC_LIST)
+if sel_topics:
+    topic_keywords = [t.lower() for t in sel_topics]
+    df = df[df["title"].str.lower().apply(lambda title: any(k in title for k in topic_keywords))]
+
+# ─── Date Filter ──────────────────────────────────────────────────────────────
 df = df[df["published_at"].dt.date.between(start_date, end_date)]
 if df.empty:
     st.warning("No articles found. Try broadening your date range or filters.")
@@ -118,34 +135,30 @@ if df.empty:
 st.markdown("## PetroPulse Dashboard")
 c1, c2, c3 = st.columns(3)
 with c1:
-    kpi_card("Articles",      f"{len(df)}",                      "linear-gradient(135deg,#1E3A8A,#3B82F6)")
+    kpi_card("Articles", f"{len(df)}", "linear-gradient(135deg,#1E3A8A,#3B82F6)")
 with c2:
     avg_sent = df["sentiment"].astype(float, errors="ignore").mean()
-    kpi_card("Avg Sentiment", f"{avg_sent:.3f}",                "linear-gradient(135deg,#065F46,#10B981)")
+    kpi_card("Avg Sentiment", f"{avg_sent:.3f}", "linear-gradient(135deg,#065F46,#10B981)")
 with c3:
-    kpi_card("Sources",       f"{df['source'].nunique()}",      "linear-gradient(135deg,#B45309,#F59E0B)")
+    kpi_card("Sources", f"{df['source'].nunique()}", "linear-gradient(135deg,#B45309,#F59E0B)")
 
 # ─── Latest Articles Table ────────────────────────────────────────────────────
 st.markdown("### Latest Articles")
 tbl = df.copy()
 tbl["Published"] = tbl["published_at"].apply(to_edtz)
-
-# here's the important fix:
-# coerce your sentiment column to numeric, then map.
 tbl["sentiment"] = pd.to_numeric(tbl["sentiment"], errors="coerce").fillna(0.0)
 tbl["Sentiment"] = tbl["sentiment"].apply(
     lambda x: "Positive" if x > 0.1 else ("Negative" if x < -0.1 else "Neutral")
 )
-
 tbl["Link"] = tbl["url"].apply(lambda u: f'<a href="{u}" target="_blank">Read</a>')
 display = (
-    tbl[["Published","source","title","Sentiment","Link"]]
-    .rename(columns={"source":"Source","title":"Title"})
+    tbl[["Published", "source", "title", "Sentiment", "Link"]]
+    .rename(columns={"source": "Source", "title": "Title"})
     .sort_values("Published", ascending=False)
 )
 st.write(display.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-# ─── Sentiment Trend ──────────────────────────────────────────────────────────
+# ─── Sentiment Trend Chart ────────────────────────────────────────────────────
 idx_df = compute_daily_sentiment_index(df) if compute_daily_sentiment_index else pd.DataFrame()
 if idx_df.empty:
     tmp = df.dropna(subset=["published_at"])
@@ -160,27 +173,26 @@ vol["date"] = vol["published_at"].dt.date
 vol_chart = (
     alt.Chart(vol)
     .mark_bar()
-    .encode(x="date:T", y="count()", tooltip=["date:T","count()"])
+    .encode(x="date:T", y="count()", tooltip=["date:T", "count()"])
     .properties(height=200)
     .interactive()
 )
 st.altair_chart(vol_chart, use_container_width=True)
 
-# ─── Word Cloud ───────────────────────────────────────────────────────────────
+# ─── Word Cloud of Titles ─────────────────────────────────────────────────────
 st.subheader("Word Cloud of Titles")
 all_titles = " ".join(df["title"].dropna())
 wc = WordCloud(width=600, height=300, background_color="white").generate(all_titles)
-fig, ax = plt.subplots(figsize=(6,3))
+fig, ax = plt.subplots(figsize=(6, 3))
 ax.imshow(wc, interpolation="bilinear")
 ax.axis("off")
 st.pyplot(fig)
 
-# ─── Download CSV ─────────────────────────────────────────────────────────────
+# ─── Download Filtered Data ───────────────────────────────────────────────────
 st.subheader("Download Filtered Data")
 buf = StringIO()
 df.to_csv(buf, index=False)
-st.download_button("Download as CSV", data=buf.getvalue(),
-                   file_name="petropulse.csv", mime="text/csv")
+st.download_button("Download as CSV", data=buf.getvalue(), file_name="petropulse.csv", mime="text/csv")
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 st.markdown(
