@@ -96,28 +96,48 @@ TOPIC_LIST = [
     "Exploration", "Seismic Surveys", "Reservoir Engineering", "Drilling", "Well Logging",
     "Well Intervention", "Well Completion", "Hydraulic Fracturing", "Production Optimization",
     "Enhanced Oil Recovery", "Shale Gas", "Oil Sands", "Deepwater", "Offshore Drilling",
-    "FPSO", "Directional Drilling",
+    "FPSO", "Directional Drilling", "Mudlogging", "Formation Damage", "Core Flooding",
+
     # Midstream
     "Pipeline Transportation", "Pipeline Safety", "Gas Processing", "Liquefied Natural Gas",
     "Storage", "Compressor Stations", "Metering and SCADA", "Crude Transport",
-    "Permian Basin", "Hydrogen Blending",
+    "Permian Basin", "Hydrogen Blending", "CNG", "Sour Gas", "Sweet Gas",
+
     # Downstream
     "Refining", "Petrochemicals", "Retail Fuels", "LNG Export", "Crude Oil Pricing",
     "Trading and Supply", "Turnarounds", "Sulfur Recovery",
+
     # Energy Transition & Emissions
     "Carbon Capture", "CCUS", "Hydrogen", "Blue Hydrogen", "Green Hydrogen",
     "Methane Emissions", "Flaring Reduction", "Energy Transition", "Decarbonization",
-    "Net Zero", "Carbon Markets",
+    "Net Zero", "Carbon Markets", "CO2 Sequestration", "CO2 Storage", "Greenhouse Gas",
+
     # Renewables & Integration
     "Wind Energy", "Solar Integration", "Geothermal", "Biofuels", "Hybrid Energy Systems",
+    "Photovoltaics", "Tidal Energy", "Clean Energy", "Renewable Integration",
+
     # Digitalization & Innovation
     "Digital Oilfield", "AI in Energy", "Machine Learning", "Predictive Maintenance",
     "Remote Monitoring", "Blockchain in Oil and Gas", "Automation", "IoT in Energy",
-    "Subsurface Modeling",
-    # General/Economics
-    "Oil Prices", "Natural Gas Markets", "Energy Security", "Regulatory Compliance",
-    "Energy Policy"
+    "Subsurface Modeling", "Big Data", "Edge Computing", "Cloud", "Digital Twin",
+    "Data Science", "Deep Learning", "Image Analysis", "Robotics",
+
+    # Subsurface & Science
+    "Porosity", "Permeability", "Petrophysics", "Fluid Saturation", "Capillary Pressure",
+    "Asphaltene", "Wax Deposition",
+
+    # Power Systems
+    "Electricity", "Smart Grid", "Load Forecasting", "Power Generation",
+    "Grid Resilience", "Distributed Energy", "Energy Efficiency",
+
+    # Policy, ESG, Investment
+    "Oil Prices", "Energy Policy", "Energy Markets", "Energy Security",
+    "Environmental Compliance", "Inflation Reduction Act", "Energy Investment",
+    "Carbon Disclosure", "Emissions Reporting", "OPEC", "IEA", "IRA",
+    "Energy Innovation", "Workforce Transition", "Environmental Social Governance",
+    "ESG", "Safety", "HSE", "Strategic Reserve"
 ]
+
 
 sel_topics = st.sidebar.multiselect("Topics", TOPIC_LIST)
 if sel_topics:
